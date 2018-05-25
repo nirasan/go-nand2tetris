@@ -8,9 +8,9 @@ import (
 )
 
 var (
-	ACommandRegex = regexp.MustCompile(`^\s*@(.*)`)
-	CCommandRegex = regexp.MustCompile(`^\s*([ADM]+=)?([\-\+\!\&\|01ADM]+)(;[JGELNMTQP]+)?`)
-	LCommandRegex = regexp.MustCompile(`^\s*\((.*)\)`)
+	ACommandRegex = regexp.MustCompile(`^@(.*)`)
+	CCommandRegex = regexp.MustCompile(`^([ADM]+=)?([\-\+\!\&\|01ADM]+)(;[JGELNMTQP]+)?\s*`)
+	LCommandRegex = regexp.MustCompile(`^\((.*)\)`)
 )
 
 type CommandType uint8
@@ -44,6 +44,7 @@ func (p *Parser) HasMoreCommands() bool {
 		return false
 	}
 	line := p.Scanner.Text()
+	line = strings.TrimSpace(line)
 	if ACommandRegex.MatchString(line) || CCommandRegex.MatchString(line) || LCommandRegex.MatchString(line) {
 		p.CurrentLine = line
 		return true
