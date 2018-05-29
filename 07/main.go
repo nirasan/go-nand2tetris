@@ -13,6 +13,7 @@ func main() {
 	}
 	parser := NewParder(f)
 	codeWriter := NewCodeWriter(os.Stdout)
+	codeWriter.SetFileName(filename)
 
 	for parser.HasMoreCommands() {
 		log.Printf("%s", parser.line)
