@@ -283,7 +283,7 @@ func (c *CodeWriter) WriteReturn() {
 	// THAT = *(FRAME - 1)
 	c.p("@R13")
 	c.p("A=M-1") // A = caller THAT address pointer
-	c.p("D=M") // D = caller THAT address
+	c.p("D=M")   // D = caller THAT address
 	c.p("@THAT")
 	c.p("M=D")
 	// THIS = *(FRAME - 2)
@@ -291,7 +291,7 @@ func (c *CodeWriter) WriteReturn() {
 	c.p("D=A")
 	c.p("@R13")
 	c.p("A=M-D") // A = caller THIS address pointer
-	c.p("D=M") // D = caller THIS address
+	c.p("D=M")   // D = caller THIS address
 	c.p("@THIS")
 	c.p("M=D")
 	// ARG = *(FRAME - 3)
@@ -299,7 +299,7 @@ func (c *CodeWriter) WriteReturn() {
 	c.p("D=A")
 	c.p("@R13")
 	c.p("A=M-D") // A = caller ARG address pointer
-	c.p("D=M") // D = caller ARG address
+	c.p("D=M")   // D = caller ARG address
 	c.p("@ARG")
 	c.p("M=D")
 	// LCL = *(FRAME - 4)
@@ -307,7 +307,7 @@ func (c *CodeWriter) WriteReturn() {
 	c.p("D=A")
 	c.p("@R13")
 	c.p("A=M-D") // A = caller LCL address pointer
-	c.p("D=M") // D = caller LCL address
+	c.p("D=M")   // D = caller LCL address
 	c.p("@LCL")
 	c.p("M=D")
 	// return address = *(FRAME - 5)
@@ -315,7 +315,7 @@ func (c *CodeWriter) WriteReturn() {
 	c.p("D=A")
 	c.p("@R13")
 	c.p("A=M-D") // A = return address pointer
-	c.p("A=M") // A = return address
+	c.p("A=M")   // A = return address
 	// goto return address
 	c.p("0;JMP")
 }
