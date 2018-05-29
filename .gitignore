@@ -1,3 +1,5 @@
 06/test/*.hack
 07/test/**/*.asm
 07/test/**/*.out
+08/test/**/*.asm
+08/test/**/*.out
