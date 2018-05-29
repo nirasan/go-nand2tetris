@@ -31,7 +31,7 @@ func (c *CodeWriter) SetFileName(f string) {
 }
 
 func (c *CodeWriter) WriteArithmetic(command string) {
-	c.l("// " + command)
+	c.l("//===== " + command)
 	switch command {
 	case "add":
 		c.p("@SP")   // A = 0
@@ -112,7 +112,7 @@ func (c *CodeWriter) WriteArithmetic(command string) {
 }
 
 func (c *CodeWriter) WritePushPop(command string, segment string, index string) {
-	c.l("// %s %s %s", command, segment, index)
+	c.l("//===== %s %s %s", command, segment, index)
 	if command == "push" {
 		switch segment {
 		case "constant":
@@ -195,6 +195,33 @@ func (c *CodeWriter) WritePushPop(command string, segment string, index string) 
 			c.p("M=M-1")
 		}
 	}
+}
+
+func (c *CodeWriter) WriteLabel(label string) {
+	c.l("//===== label %s", label)
+	c.l("(%s)", label)
+}
+
+func (c *CodeWriter) WriteGoto(label string) {
+	c.l("//===== goto %s", label)
+	c.p("@%s", label)
+	c.p("0;JMP")
+}
+
+func (c *CodeWriter) WriteIf(label string) {
+	c.l("//===== if-goto %s", label)
+	// pop
+	c.p("@SP")
+	c.p("A=M-1")
+	c.p("D=M")
+	// SP--
+	c.p("@SP")
+	c.p("M=M-1")
+	// if
+	c.p("@%d", c.lineNumber+4)
+	c.p("D;JEQ")
+	c.p("@%s", label)
+	c.p("0;JMP")
 }
 
 func (c *CodeWriter) p(format string, a ...interface{}) {

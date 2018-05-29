@@ -22,6 +22,9 @@ var (
 		`and`:  C_ARITHMETIC,
 		`or`:   C_ARITHMETIC,
 		`not`:  C_ARITHMETIC,
+		`label`: C_LABEL,
+		`goto`: C_GOTO,
+		`if-goto`: C_IF,
 	}
 )
 
@@ -59,11 +62,10 @@ func (p *Parser) HasMoreCommands() bool {
 	}
 
 	line := strings.TrimSpace(p.s.Text())
-	for _, command := range commands {
-		if strings.Index(line, command) == 0 {
-			p.line = line
-			return true
-		}
+	command := strings.Split(line, " ")[0]
+	if _, ok := commandTypeMap[command]; ok {
+		p.line = line
+		return true
 	}
 	return p.HasMoreCommands()
 }

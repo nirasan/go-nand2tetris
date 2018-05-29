@@ -22,6 +22,12 @@ func main() {
 			codeWriter.WriteArithmetic(parser.Arg1())
 		case C_PUSH, C_POP:
 			codeWriter.WritePushPop(parser.Command(), parser.Arg1(), parser.Arg2())
+		case C_LABEL:
+			codeWriter.WriteLabel(parser.Arg1())
+		case C_GOTO:
+			codeWriter.WriteGoto(parser.Arg1())
+		case C_IF:
+			codeWriter.WriteIf(parser.Arg1())
 		}
 	}
 }
