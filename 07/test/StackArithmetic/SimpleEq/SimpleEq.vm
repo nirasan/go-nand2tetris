@@ -1,0 +1,40 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/07/StackArithmetic/SimpleAdd/SimpleAdd.vm
+
+// Pushes and adds two constants.
+push constant 1
+push constant 2
+eq
+push constant 3
+push constant 3
+eq
+
+push constant 4
+push constant 5
+gt
+push constant 7
+push constant 6
+gt
+
+push constant 8
+push constant 9
+lt
+push constant 11
+push constant 10
+lt
+
+push constant 1
+push constant 3
+and
+
+push constant 1
+push constant 4
+or
+
+push constant 0
+not
+
+push constant 1
+neg
