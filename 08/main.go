@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strconv"
 )
 
 func main() {
@@ -28,6 +29,20 @@ func main() {
 			codeWriter.WriteGoto(parser.Arg1())
 		case C_IF:
 			codeWriter.WriteIf(parser.Arg1())
+		case C_CALL:
+			i, err := strconv.Atoi(parser.Arg2())
+			if err != nil {
+				panic(err)
+			}
+			codeWriter.WriteCall(parser.Arg1(), i)
+		case C_RETURN:
+			codeWriter.WriteReturn()
+		case C_FUNCTION:
+			i, err := strconv.Atoi(parser.Arg2())
+			if err != nil {
+				panic(err)
+			}
+			codeWriter.WriteFunction(parser.Arg1(), i)
 		}
 	}
 }

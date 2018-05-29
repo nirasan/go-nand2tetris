@@ -7,9 +7,6 @@ import (
 )
 
 var (
-	commands = []string{
-		`push`, `pop`, `add`, `sub`, `neg`, `eq`, `gt`, `lt`, `and`, `or`, `not`,
-	}
 	commandTypeMap = map[string]CommandType{
 		`push`: C_PUSH,
 		`pop`:  C_POP,
@@ -25,6 +22,9 @@ var (
 		`label`: C_LABEL,
 		`goto`: C_GOTO,
 		`if-goto`: C_IF,
+		`function`: C_FUNCTION,
+		`call`: C_CALL,
+		`return`: C_RETURN,
 	}
 )
 

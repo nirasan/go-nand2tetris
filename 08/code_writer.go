@@ -224,6 +224,125 @@ func (c *CodeWriter) WriteIf(label string) {
 	c.p("0;JMP")
 }
 
+func (c *CodeWriter) WriteCall(functionName string, numArgs int) {
+	c.l("//===== call %s, %d", functionName, numArgs)
+	returnAddr := fmt.Sprintf("%s.%d", c.filename, c.lineNumber)
+	// push return-address
+	c.WritePush(returnAddr)
+	// push LCL, ARG, THIS, THAT
+	regs := []string{"LCL", "ARG", "THIS", "THAT"}
+	for _, reg := range regs {
+		c.p("@%s", reg)
+		c.p("D=M")
+		c.p("@SP")
+		c.p("A=M")
+		c.p("M=D")
+		c.p("@SP")
+		c.p("M=M+1")
+	}
+	// ARG = SP - n - 5
+	c.p("@SP")
+	c.p("D=M")
+	c.p("@%d", numArgs)
+	c.p("D=D-A")
+	c.p("@5")
+	c.p("D=D-A") // D = SP - n - 5
+	c.p("@ARG")
+	c.p("M=D")
+	// LCL = SP
+	c.p("@SP")
+	c.p("D=M")
+	c.p("@LCL")
+	c.p("M=D")
+	// goto function
+	c.p("@%s", functionName)
+	c.p("0;JMP")
+	// return-address label
+	c.l("(%s)", returnAddr)
+}
+
+func (c *CodeWriter) WriteReturn() {
+	c.l("//===== return")
+	// FRAME = LCL
+	c.p("@LCL")
+	c.p("D=M")
+	c.p("@R13")
+	c.p("M=D")
+	// *ARG = pop()
+	c.p("@SP")
+	c.p("A=M-1")
+	c.p("D=M") // D = return value
+	c.p("@ARG")
+	c.p("A=M")
+	c.p("M=D") // *ARG = return value
+	// SP = ARG + 1
+	c.p("@ARG")
+	c.p("D=M+1")
+	c.p("@SP")
+	c.p("M=D")
+	// THAT = *(FRAME - 1)
+	c.p("@R13")
+	c.p("A=M-1") // A = caller THAT address pointer
+	c.p("D=M") // D = caller THAT address
+	c.p("@THAT")
+	c.p("M=D")
+	// THIS = *(FRAME - 2)
+	c.p("@2")
+	c.p("D=A")
+	c.p("@R13")
+	c.p("A=M-D") // A = caller THIS address pointer
+	c.p("D=M") // D = caller THIS address
+	c.p("@THIS")
+	c.p("M=D")
+	// ARG = *(FRAME - 3)
+	c.p("@3")
+	c.p("D=A")
+	c.p("@R13")
+	c.p("A=M-D") // A = caller ARG address pointer
+	c.p("D=M") // D = caller ARG address
+	c.p("@ARG")
+	c.p("M=D")
+	// LCL = *(FRAME - 4)
+	c.p("@4")
+	c.p("D=A")
+	c.p("@R13")
+	c.p("A=M-D") // A = caller LCL address pointer
+	c.p("D=M") // D = caller LCL address
+	c.p("@LCL")
+	c.p("M=D")
+	// return address = *(FRAME - 5)
+	c.p("@5")
+	c.p("D=A")
+	c.p("@R13")
+	c.p("A=M-D") // A = return address pointer
+	c.p("A=M") // A = return address
+	// goto return address
+	c.p("0;JMP")
+}
+
+func (c *CodeWriter) WriteFunction(functionName string, numLocals int) {
+	c.l("//===== function %s, %d", functionName, numLocals)
+	c.l("(%s)", functionName)
+	// init local
+	for i := 0; i < numLocals; i++ {
+		c.p("@SP")
+		c.p("A=M")
+		c.p("M=0")
+		c.p("@SP")
+		c.p("M=M+1")
+	}
+}
+
+func (c *CodeWriter) WritePush(addr string) {
+	c.p("@%s", addr)
+	c.p("D=A")
+	c.p("@SP")
+	c.p("A=M")
+	c.p("M=D")
+	c.p("@SP")
+	c.p("M=M+1")
+}
+
 func (c *CodeWriter) p(format string, a ...interface{}) {
 	fmt.Fprintf(c.w, format+"\n", a...)
 	c.lineNumber += 1
