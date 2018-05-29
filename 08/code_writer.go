@@ -268,6 +268,14 @@ func (c *CodeWriter) WriteReturn() {
 	c.p("D=M")
 	c.p("@R13")
 	c.p("M=D")
+	// return address = *(FRAME - 5)
+	c.p("@5")
+	c.p("D=A")
+	c.p("@R13")
+	c.p("A=M-D") // A = return address pointer
+	c.p("D=M")   // D = return address
+	c.p("@R14")
+	c.p("M=D") // M[R14] = return address
 	// *ARG = pop()
 	c.p("@SP")
 	c.p("A=M-1")
@@ -310,13 +318,9 @@ func (c *CodeWriter) WriteReturn() {
 	c.p("D=M")   // D = caller LCL address
 	c.p("@LCL")
 	c.p("M=D")
-	// return address = *(FRAME - 5)
-	c.p("@5")
-	c.p("D=A")
-	c.p("@R13")
-	c.p("A=M-D") // A = return address pointer
-	c.p("A=M")   // A = return address
 	// goto return address
+	c.p("@R14")
+	c.p("A=M")
 	c.p("0;JMP")
 }
 
@@ -341,6 +345,15 @@ func (c *CodeWriter) WritePush(addr string) {
 	c.p("M=D")
 	c.p("@SP")
 	c.p("M=M+1")
+}
+
+func (c *CodeWriter) WriteInit() {
+	c.p("@256")
+	c.p("D=A")
+	c.p("@SP")
+	c.p("M=D")
+	c.p("@Sys.init")
+	c.WriteCall("Sys.init", 0)
 }
 
 func (c *CodeWriter) p(format string, a ...interface{}) {
