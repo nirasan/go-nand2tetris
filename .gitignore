@@ -3,3 +3,4 @@
 07/test/**/*.out
 08/test/**/*.asm
 08/test/**/*.out
+10/test/**/*.tokens

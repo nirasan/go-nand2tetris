@@ -43,7 +43,7 @@ func main() {
 		log.Printf("FILE: %s", f.Name())
 		tokenizer := NewTokenizer(f)
 
-		w, err := os.Create(f.Name() + ".xml")
+		w, err := os.Create(f.Name() + ".tokens")
 		if err != nil {
 			panic(err)
 		}
