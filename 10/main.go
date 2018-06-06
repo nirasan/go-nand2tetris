@@ -70,5 +70,16 @@ func main() {
 
 		w.Close()
 		f.Close()
+
+		// CREATE XML
+		r, err := os.Open(f.Name() + ".tokens")
+		w, err = os.Create(f.Name() + ".xml")
+		if err != nil {
+			panic(err)
+		}
+		compiler := NewCompiler(r, w)
+		compiler.CompileClass()
+		r.Close()
+		w.Close()
 	}
 }
