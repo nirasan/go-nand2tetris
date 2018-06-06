@@ -77,9 +77,20 @@ func (t *Tokenizer) HasMoreTokens() bool {
 
 	// skip '/* */' comment
 	if strings.Index(l, "/*") == 0 {
-		i := strings.Index(l, "*/")
-		if i == -1 {
-			panic("comment close words not found: " + l)
+		var i int
+		for {
+			i = strings.Index(l, "*/")
+			if i != -1 {
+				break
+			}
+			// read next line
+			if !t.s.Scan() {
+				return false
+			}
+			line := strings.TrimSpace(t.s.Text())
+			t.line = line
+			t.index = 0
+			l = t.line
 		}
 		t.index = t.index + i + 2
 		return t.HasMoreTokens()
