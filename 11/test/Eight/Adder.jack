@@ -1,0 +1,10 @@
+class Adder {
+    field int a;
+    constructor Adder new(int A) {
+        let a = A;
+        return this;
+    }
+    method int Add(int b) {
+        return a + b;
+    }
+}

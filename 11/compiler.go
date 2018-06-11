@@ -7,11 +7,19 @@ import (
 	"regexp"
 	"log"
 	"strings"
+	"strconv"
+	"os"
 )
 
 var (
 	tagIdentifier = "identifier"
 	regexTag = regexp.MustCompile(`^<(.*?)> (.*) </.*>$`)
+	kindToSegment = map[string]string{
+		"field": "this",
+		"static": "static",
+		"local": "local",
+		"arg": "argument",
+	}
 )
 
 type Compiler struct {
@@ -22,14 +30,51 @@ type Compiler struct {
 	tag string
 	value string
 	indent int
+
+	symbolTable *SymbolTable
+	vmWriter *VMWriter
+
+	className string
+	subroutineName string
+	subroutineKind string
+	expressionListCount int
+	labelCount int
 }
 
-func NewCompiler(r io.Reader, w io.Writer) *Compiler {
-	return &Compiler{
+func NewCompiler(r io.Reader, w io.Writer, ww io.Writer) *Compiler {
+	c := &Compiler{
 		r: r,
 		w: w,
 		s: bufio.NewScanner(r),
+		symbolTable: NewSymbolTable(),
+		vmWriter: NewVMWriter(ww),
 	}
+
+	// create subroutine symbol table
+	file := r.(*os.File)
+	s := bufio.NewScanner(file)
+	for s.Scan() {
+		line := s.Text()
+		if strings.Index(line, "<keyword>") > -1 {
+			// subroutine kind
+			kind := regexTag.FindAllStringSubmatch(line, -1)[0][2]
+			if kind == "method" || kind == "constructor" || kind == "function" {
+				// subroutine return type
+				s.Scan()
+				line = s.Text()
+				typeName := regexTag.FindAllStringSubmatch(line, -1)[0][2]
+				// subroutine name
+				s.Scan()
+				line = s.Text()
+				name := regexTag.FindAllStringSubmatch(line, -1)[0][2]
+				// set symbol table
+				c.symbolTable.Define(name, typeName, kind)
+			}
+		}
+	}
+	file.Seek(0, 0)
+
+	return c
 }
 
 func (c *Compiler) CompileClass() {
@@ -47,6 +92,7 @@ func (c *Compiler) CompileClass() {
 	// className
 	c.Scan()
 	c.TagMust(tagIdentifier)
+	c.className = c.value
 	c.PrintLine()
 
 	// {
@@ -83,16 +129,21 @@ func (c *Compiler) CompileClassVarDec() {
 	c.TagMust("keyword")
 	c.ValueMust("static", "field")
 	c.PrintLine()
+	kind := c.value
 
 	// type
 	c.Scan()
 	c.MustType()
 	c.PrintLine()
+	typeName := c.value
 	
 	// varName
 	c.Scan()
 	c.TagMust(tagIdentifier)
 	c.PrintLine()
+	name := c.value
+
+	c.symbolTable.Define(name, typeName, kind)
 	
 	// (, varName)*
 	c.Scan()
@@ -103,7 +154,10 @@ func (c *Compiler) CompileClassVarDec() {
 		// varName
 		c.TagMust(tagIdentifier)
 		c.PrintLine()
+		name = c.value
 		c.Scan()
+
+		c.symbolTable.Define(name, typeName, kind)
 	}
 	
 	// ;
@@ -121,9 +175,12 @@ func (c *Compiler) CompileSubroutineDec() {
 	c.Println("<subroutineDec>")
 	c.indent += 1
 
+	c.symbolTable.StartSubroutine()
+
 	// constructor, function, method
 	c.ValueMust("constructor", "function", "method")
 	c.PrintLine()
+	c.subroutineKind = c.value
 	c.Scan()
 	
 	// void | type
@@ -136,6 +193,7 @@ func (c *Compiler) CompileSubroutineDec() {
 	// subroutineName
 	c.TagMust(tagIdentifier)
 	c.PrintLine()
+	c.subroutineName = c.value
 	c.Scan()
 
 	// (
@@ -165,18 +223,26 @@ func (c *Compiler) CompileParameterList() {
 	c.Println("<parameterList>")
 	c.indent += 1
 
+	if c.subroutineKind == "method" {
+		c.symbolTable.Define("this", c.className, "arg")
+	}
+
 	// empty parameterList
 	if c.IsType() {
 
 		// type
 		c.MustType()
 		c.PrintLine()
+		typeName := c.value
 		c.Scan()
 
 		// varName
 		c.TagMust(tagIdentifier)
 		c.PrintLine()
+		name := c.value
 		c.Scan()
+
+		c.symbolTable.Define(name, typeName, "arg")
 
 		// (, type varName)*
 		for c.ValueIs(",") {
@@ -187,11 +253,14 @@ func (c *Compiler) CompileParameterList() {
 			// type
 			c.MustType()
 			c.PrintLine()
+			typeName = c.value
 			c.Scan()
 
 			// varName
 			c.TagMust(tagIdentifier)
 			c.PrintLine()
+			name = c.value
+			c.symbolTable.Define(name, typeName, "arg")
 			c.Scan()
 		}
 	}
@@ -203,6 +272,7 @@ func (c *Compiler) CompileParameterList() {
 
 // { varDec* statements }
 func (c *Compiler) CompileSubroutineBody() {
+
 	// subroutineBody
 	c.Println("<subroutineBody>")
 	c.indent += 1
@@ -215,6 +285,22 @@ func (c *Compiler) CompileSubroutineBody() {
 	// varDec*
 	for c.ValueIs("var") {
 		c.CompileVarDec()
+	}
+
+	c.vmWriter.WriteFunction(fmt.Sprintf("%s.%s", c.className, c.subroutineName), c.symbolTable.VarCount("local"))
+
+	if c.subroutineKind == "method" {
+		// read this
+		c.vmWriter.WritePush("argument", 0)
+		// set this
+		c.vmWriter.WritePop("pointer", 0)
+	} else if c.subroutineKind == "constructor" {
+		// get field size
+		c.vmWriter.WritePush("constant", c.symbolTable.VarCount("field"))
+		// call alloc memory
+		c.vmWriter.WriteCall("Memory.alloc", 1)
+		// get this address
+		c.vmWriter.WritePop("pointer", 0)
 	}
 
 	// statements
@@ -244,12 +330,16 @@ func (c *Compiler) CompileVarDec() {
 	// type
 	c.MustType()
 	c.PrintLine()
+	typeName := c.value
 	c.Scan()
 
 	// varName
 	c.TagMust(tagIdentifier)
 	c.PrintLine()
+	name := c.value
 	c.Scan()
+
+	c.symbolTable.Define(name, typeName, "local")
 
 	// (, varName)*
 	for c.ValueIs(",") {
@@ -259,6 +349,8 @@ func (c *Compiler) CompileVarDec() {
 		// varName
 		c.TagMust(tagIdentifier)
 		c.PrintLine()
+		name = c.value
+		c.symbolTable.Define(name, typeName, "local")
 		c.Scan()
 	}
 
@@ -310,17 +402,26 @@ func (c *Compiler) CompileLetStatement() {
 	// varName
 	c.Scan()
 	c.TagMust(tagIdentifier)
+	name := c.value
 	c.PrintLine()
+
+	kind := c.symbolTable.KindOf(name)
+	typeName := c.symbolTable.TypeOf(name)
+	number := c.symbolTable.IndexOf(name)
+	hasIndex := false
 
 	// ( [ expression ] )?
 	c.Scan()
 	if c.ValueIs("[") {
+		hasIndex = true
+
 		// [
 		c.PrintLine()
 		c.Scan()
 
 		// expression
 		c.CompileExpression()
+		c.vmWriter.WritePop("temp", 1)
 
 		// ]
 		c.ValueMust("]")
@@ -335,6 +436,20 @@ func (c *Compiler) CompileLetStatement() {
 
 	// expression
 	c.CompileExpression()
+
+	if typeName == "Array" && hasIndex {
+		// calc addr + index
+		c.vmWriter.WritePush(kindToSegment[kind], number)
+		c.vmWriter.WritePush("temp", 1)
+		c.vmWriter.WriteArithmetic("add")
+		// set pointer
+		c.vmWriter.WritePop("pointer", 1)
+		// insert that
+		c.vmWriter.WritePop("that", 0)
+	} else {
+		// insert var
+		c.vmWriter.WritePop(kindToSegment[kind], number)
+	}
 
 	// ;
 	c.ValueMust(";")
@@ -369,6 +484,8 @@ func (c *Compiler) CompileReturnStatement() {
 	// close returnStatement
 	c.indent -= 1
 	c.Println("</returnStatement>")
+
+	c.vmWriter.WriteReturn()
 }
 
 func (c *Compiler) CompileIfStatement() {
@@ -389,6 +506,14 @@ func (c *Compiler) CompileIfStatement() {
 	// expression
 	c.CompileExpression()
 
+	c.labelCount += 1
+	l1 := fmt.Sprintf("%s.label.%d", c.className, c.labelCount)
+	c.labelCount += 1
+	l2 := fmt.Sprintf("%s.label.%d", c.className, c.labelCount)
+
+	c.vmWriter.WriteArithmetic("not")
+	c.vmWriter.WriteIf(l1)
+
 	// )
 	c.ValueMust(")")
 	c.PrintLine()
@@ -406,6 +531,9 @@ func (c *Compiler) CompileIfStatement() {
 	c.ValueMust("}")
 	c.PrintLine()
 	c.Scan()
+
+	c.vmWriter.WriteGoto(l2)
+	c.vmWriter.WriteLabel(l1)
 
 	// ( else { statements } )?
 	if c.ValueIs("else") {
@@ -427,6 +555,8 @@ func (c *Compiler) CompileIfStatement() {
 		c.Scan()
 	}
 
+	c.vmWriter.WriteLabel(l2)
+
 	// close ifStatement
 	c.indent -= 1
 	c.Println("</ifStatement>")
@@ -436,6 +566,11 @@ func (c *Compiler) CompileWhileStatement() {
 	// whileStatement
 	c.Println("<whileStatement>")
 	c.indent += 1
+
+	c.labelCount += 1
+	l1 := fmt.Sprintf("%s.label.%d", c.className, c.labelCount)
+	c.labelCount += 1
+	l2 := fmt.Sprintf("%s.label.%d", c.className, c.labelCount)
 
 	// while
 	c.ValueMust("while")
@@ -447,8 +582,13 @@ func (c *Compiler) CompileWhileStatement() {
 	c.PrintLine()
 	c.Scan()
 
+	c.vmWriter.WriteLabel(l1)
+
 	// expression
 	c.CompileExpression()
+
+	c.vmWriter.WriteArithmetic("not")
+	c.vmWriter.WriteIf(l2)
 
 	// )
 	c.ValueMust(")")
@@ -467,6 +607,9 @@ func (c *Compiler) CompileWhileStatement() {
 	c.ValueMust("}")
 	c.PrintLine()
 	c.Scan()
+
+	c.vmWriter.WriteGoto(l1)
+	c.vmWriter.WriteLabel(l2)
 
 	// close whileStatement
 	c.indent -= 1
@@ -509,9 +652,31 @@ func (c *Compiler) CompileExpression() {
 	for c.IsOp() {
 		// op
 		c.PrintLine()
+		op := c.value
 		c.Scan()
 		// term
 		c.CompileTerm()
+
+		switch op {
+		case "+":
+			c.vmWriter.WriteArithmetic("add")
+		case "-":
+			c.vmWriter.WriteArithmetic("sub")
+		case "*":
+			c.vmWriter.WriteCall("Math.multiply", 2)
+		case "/":
+			c.vmWriter.WriteCall("Math.divide", 2)
+		case "&":
+			c.vmWriter.WriteArithmetic("and")
+		case "|":
+			c.vmWriter.WriteArithmetic("or")
+		case "<":
+			c.vmWriter.WriteArithmetic("lt")
+		case ">":
+			c.vmWriter.WriteArithmetic("gt")
+		case "=":
+			c.vmWriter.WriteArithmetic("eq")
+		}
 	}
 
 	// close expression
@@ -527,15 +692,43 @@ func (c *Compiler) CompileTerm() {
 	if c.TagIs("integerConstant") {
 		// integerConstant
 		c.PrintLine()
+		v := c.value
 		c.Scan()
+
+		i, err := strconv.Atoi(v)
+		if err != nil {
+			log.Fatal(err)
+		}
+		c.vmWriter.WritePush("constant", i)
 	} else if c.TagIs("stringConstant") {
 		// stringConstant
 		c.PrintLine()
+		s := c.value
 		c.Scan()
+
+		c.vmWriter.WritePush("constant", len(s)) // String.new arg 0
+		c.vmWriter.WriteCall("String.new", 1) // new String. stack head is string object.
+		for _, char := range s {
+			c.vmWriter.WritePush("constant", int(char)) // String.appendChar arg 1
+			c.vmWriter.WriteCall("String.appendChar", 2)
+			// c.vmWriter.WritePop("temp", 0) // pop void return
+		}
+
 	} else if c.TagIs("keyword") && c.ValueIs("true", "false", "null", "this") {
 		// true | false | null | this
 		c.PrintLine()
+		v := c.value
 		c.Scan()
+
+		switch v {
+		case "true":
+			c.vmWriter.WritePush("constant", 1)
+			c.vmWriter.WriteArithmetic("neg")
+		case "false", "null":
+			c.vmWriter.WritePush("constant", 0)
+		case "this":
+			c.vmWriter.WritePush("pointer", 0)
+		}
 	} else if c.ValueIs("(") {
 		// (
 		c.PrintLine()
@@ -551,9 +744,17 @@ func (c *Compiler) CompileTerm() {
 	} else if c.TagIs("symbol") && c.ValueIs("-", "~") {
 		// - | ~
 		c.PrintLine()
+		op := c.value
 		c.Scan()
 		// term
 		c.CompileTerm()
+
+		switch op {
+		case "-":
+			c.vmWriter.WriteArithmetic("neg")
+		case "~":
+			c.vmWriter.WriteArithmetic("not")
+		}
 	} else if c.TagIs(tagIdentifier) {
 		// subroutineCall
 		c.CompileSubroutineCall()
@@ -569,6 +770,10 @@ func (c *Compiler) CompileSubroutineCall() {
 	// varName | varName [ expression ] | subroutineName ( expressionList ) | (className | varName).subroutineName ( expressionList )
 	c.TagMust(tagIdentifier)
 	c.PrintLine()
+	name := c.value
+	typeName := c.symbolTable.TypeOf(name)
+	kind := c.symbolTable.KindOf(name)
+	number := c.symbolTable.IndexOf(name)
 	c.Scan()
 
 	if c.ValueIs("[") {
@@ -586,6 +791,11 @@ func (c *Compiler) CompileSubroutineCall() {
 		c.PrintLine()
 		c.Scan()
 
+		c.vmWriter.WritePush(kindToSegment[kind], number)
+		c.vmWriter.WriteArithmetic("add")
+		c.vmWriter.WritePop("pointer", 1)
+		c.vmWriter.WritePush("that", 0)
+
 	} else if c.ValueIs(".") {
 		// (className | varName) . subroutineName ( expressionList )
 
@@ -596,7 +806,19 @@ func (c *Compiler) CompileSubroutineCall() {
 		// subroutineName
 		c.TagMust(tagIdentifier)
 		c.PrintLine()
+		subroutineName := c.value
 		c.Scan()
+
+		// set "this" object to stack
+		isMethod := false
+		className := ""
+		if kind == "none" {
+			className = name
+		} else {
+			isMethod = true
+			className = typeName
+			c.vmWriter.WritePush(kindToSegment[kind], number)
+		}
 
 		// (
 		c.ValueMust("(")
@@ -610,10 +832,26 @@ func (c *Compiler) CompileSubroutineCall() {
 		c.ValueMust(")")
 		c.PrintLine()
 		c.Scan()
+
+		argCount := c.expressionListCount
+		if isMethod {
+			argCount += 1
+		}
+		c.vmWriter.WriteCall(fmt.Sprintf("%s.%s", className, subroutineName), argCount)
 
 	} else if c.ValueIs("(") {
 		// subroutineName ( expressionList )
 
+		isMethod := false
+		for _, e := range c.symbolTable.subroutine {
+			// called method without "this"
+			if e.name == name && e.kind == "method" {
+				isMethod = true
+				c.vmWriter.WritePush("pointer", 0)
+				break
+			}
+		}
+
 		// (
 		c.ValueMust("(")
 		c.PrintLine()
@@ -627,9 +865,17 @@ func (c *Compiler) CompileSubroutineCall() {
 		c.PrintLine()
 		c.Scan()
 
+		argCount := c.expressionListCount
+		if isMethod {
+			argCount += 1
+		}
+		c.vmWriter.WriteCall(fmt.Sprintf("%s.%s", c.className, name), argCount)
+
 	} else {
 		// varName
 		// no op
+
+		c.vmWriter.WritePush(kindToSegment[kind], number)
 	}
 }
 
@@ -639,10 +885,14 @@ func (c *Compiler) CompileExpressionList() {
 	c.Println("<expressionList>")
 	c.indent += 1
 
+	count := 0
+
 	if c.IsTerm() {
 
 		// expression
 		c.CompileExpression()
+
+		count += 1
 
 		for c.ValueIs(",") {
 			// ,
@@ -651,6 +901,8 @@ func (c *Compiler) CompileExpressionList() {
 
 			// expression
 			c.CompileExpression()
+
+			count += 1
 		}
 
 	}
@@ -658,6 +910,8 @@ func (c *Compiler) CompileExpressionList() {
 	// close expressionList
 	c.indent -= 1
 	c.Println("</expressionList>")
+
+	c.expressionListCount = count
 }
 
 func (c *Compiler) Scan() bool {

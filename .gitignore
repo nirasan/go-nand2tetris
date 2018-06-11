@@ -5,3 +5,6 @@
 08/test/**/*.out
 10/test/**/*.tokens
 10/test/**/*.xml
+11/test/**/*.tokens
+11/test/**/*.xml
+11/test/**/*.vm

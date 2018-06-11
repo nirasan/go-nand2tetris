@@ -77,8 +77,13 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		compiler := NewCompiler(r, w)
+		ww, err := os.Create(strings.TrimRight(f.Name(), ".jack") + ".vm")
+		if err != nil {
+			panic(err)
+		}
+		compiler := NewCompiler(r, w, ww)
 		compiler.CompileClass()
+		log.Printf("SYMBOL_TABLE: %#v", compiler.symbolTable)
 		r.Close()
 		w.Close()
 	}
